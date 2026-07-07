@@ -12,6 +12,8 @@ import {
   Text,
   TextInput,
   StatusBar as NativeStatusBar,
+  findNodeHandle,
+  PanResponder,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -26,8 +28,8 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react-native';
-import Svg, { Circle, G, Line, Polyline, Text as SvgText } from 'react-native-svg';
-import { type ComponentType, forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import Svg, { Circle, ClipPath, Defs, G, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import { type ComponentType, type RefObject, forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 
 const STORAGE_KEYS = {
   profile: 'weight-tracker/profile',
@@ -96,6 +98,13 @@ const parseLocalDate = (date: string) => {
   return new Date(year, month - 1, day).getTime();
 };
 
+const formatShortDateFromTime = (time: number) => {
+  const date = new Date(time);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${month}.${day}`;
+};
+
 const isValidDate = (value: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
@@ -135,6 +144,42 @@ const sortByDateDesc = <T extends { date: string }>(items: T[]) =>
   [...items].sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date));
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const distanceBetweenTouches = (touches: ReadonlyArray<{ pageX: number; pageY: number }>) => {
+  if (touches.length < 2) {
+    return 0;
+  }
+
+  const [first, second] = touches;
+  return Math.hypot(first.pageX - second.pageX, first.pageY - second.pageY);
+};
+
+const scrollFieldIntoView = (
+  scrollRef: RefObject<ScrollView | null>,
+  fieldRef: RefObject<View | null>,
+  offset = 84,
+) => {
+  const measureAndScroll = () => {
+    const scrollNode = findNodeHandle(scrollRef.current);
+    if (!scrollNode || !fieldRef.current) {
+      return;
+    }
+
+    fieldRef.current.measureLayout(
+      scrollNode,
+      (_x, y) => {
+        scrollRef.current?.scrollTo({
+          animated: true,
+          y: Math.max(0, y - offset),
+        });
+      },
+      () => undefined,
+    );
+  };
+
+  setTimeout(measureAndScroll, 80);
+  setTimeout(measureAndScroll, 280);
+};
 
 function getProgress(profile: Profile, currentWeight: number) {
   if (profile.targetWeightKg === undefined) {
@@ -212,8 +257,10 @@ type FieldProps = {
   multiline?: boolean;
   autoFocus?: boolean;
   returnKeyType?: 'next' | 'done';
+  focusOffset?: number;
   onFocus?: () => void;
   onSubmitEditing?: () => void;
+  scrollViewRef?: RefObject<ScrollView | null>;
 };
 
 const Field = forwardRef<TextInput, FieldProps>(function Field({
@@ -225,11 +272,22 @@ const Field = forwardRef<TextInput, FieldProps>(function Field({
   multiline = false,
   autoFocus = false,
   returnKeyType = 'next',
+  focusOffset,
   onFocus,
   onSubmitEditing,
+  scrollViewRef,
 }, ref) {
+  const containerRef = useRef<View>(null);
+
+  const handleFocus = () => {
+    onFocus?.();
+    if (scrollViewRef) {
+      scrollFieldIntoView(scrollViewRef, containerRef, focusOffset);
+    }
+  };
+
   return (
-    <View style={styles.field}>
+    <View ref={containerRef} style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         autoFocus={autoFocus}
@@ -237,7 +295,7 @@ const Field = forwardRef<TextInput, FieldProps>(function Field({
         keyboardType={keyboardType}
         multiline={multiline}
         onChangeText={onChangeText}
-        onFocus={onFocus}
+        onFocus={handleFocus}
         onSubmitEditing={onSubmitEditing}
         placeholder={placeholder}
         placeholderTextColor="#98A2B3"
@@ -280,6 +338,40 @@ function WeightChart({ entries, windowDays }: { entries: WeightEntry[]; windowDa
   const padding = { top: 22, right: 20, bottom: 34, left: 42 };
   const sorted = useMemo(() => sortByDateAsc(entries), [entries]);
   const averages = useMemo(() => averageByWindow(entries, windowDays), [entries, windowDays]);
+  const [chartZoom, setChartZoom] = useState(1);
+  const chartZoomRef = useRef(1);
+  const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (event) => event.nativeEvent.touches.length === 2,
+        onStartShouldSetPanResponder: (event) => event.nativeEvent.touches.length === 2,
+        onPanResponderGrant: (event) => {
+          const distance = distanceBetweenTouches(event.nativeEvent.touches);
+          if (distance > 0) {
+            pinchStartRef.current = { distance, zoom: chartZoomRef.current };
+          }
+        },
+        onPanResponderMove: (event) => {
+          const start = pinchStartRef.current;
+          const distance = distanceBetweenTouches(event.nativeEvent.touches);
+          if (!start || distance <= 0) {
+            return;
+          }
+
+          const nextZoom = clamp(start.zoom * (distance / start.distance), 1, 4);
+          chartZoomRef.current = nextZoom;
+          setChartZoom(nextZoom);
+        },
+        onPanResponderRelease: () => {
+          pinchStartRef.current = null;
+        },
+        onPanResponderTerminate: () => {
+          pinchStartRef.current = null;
+        },
+      }),
+    [],
+  );
 
   if (sorted.length === 0) {
     return (
@@ -293,10 +385,19 @@ function WeightChart({ entries, windowDays }: { entries: WeightEntry[]; windowDa
   const allValues = [...sorted.map((item) => item.weightKg), ...averages.map((item) => item.weightKg)];
   const minWeight = Math.min(...allValues);
   const maxWeight = Math.max(...allValues);
-  const yMin = Math.floor((minWeight - 0.8) * 2) / 2;
-  const yMax = Math.ceil((maxWeight + 0.8) * 2) / 2;
-  const minTime = parseLocalDate(sorted[0].date);
-  const maxTime = parseLocalDate(sorted[sorted.length - 1].date);
+  const baseYMin = Math.floor((minWeight - 0.8) * 2) / 2;
+  const baseYMax = Math.ceil((maxWeight + 0.8) * 2) / 2;
+  const baseYMid = (baseYMin + baseYMax) / 2;
+  const visibleYRange = Math.max((baseYMax - baseYMin) / chartZoom, 0.8);
+  const yMin = baseYMid - visibleYRange / 2;
+  const yMax = baseYMid + visibleYRange / 2;
+  const fullMinTime = parseLocalDate(sorted[0].date);
+  const fullMaxTime = parseLocalDate(sorted[sorted.length - 1].date);
+  const fullTimeSpan = Math.max(fullMaxTime - fullMinTime, DAY_MS);
+  const timeMid = (fullMinTime + fullMaxTime) / 2;
+  const visibleTimeSpan = fullTimeSpan / chartZoom;
+  const minTime = fullMinTime === fullMaxTime ? fullMinTime : timeMid - visibleTimeSpan / 2;
+  const maxTime = fullMinTime === fullMaxTime ? fullMaxTime : timeMid + visibleTimeSpan / 2;
   const plotWidth = chartWidth - padding.left - padding.right;
   const plotHeight = chartHeight - padding.top - padding.bottom;
 
@@ -319,14 +420,29 @@ function WeightChart({ entries, windowDays }: { entries: WeightEntry[]; windowDa
   const actualPoints = sorted.map((item) => `${xForDate(item.date)},${yForWeight(item.weightKg)}`).join(' ');
   const averagePoints = averages.map((item) => `${xForDate(item.date)},${yForWeight(item.weightKg)}`).join(' ');
   const gridValues = [yMin, (yMin + yMax) / 2, yMax];
+  const startLabel = fullMinTime === fullMaxTime ? formatDate(sorted[0].date).slice(5) : formatShortDateFromTime(minTime);
+  const endLabel =
+    fullMinTime === fullMaxTime
+      ? formatDate(sorted[sorted.length - 1].date).slice(5)
+      : formatShortDateFromTime(maxTime);
 
   return (
-    <View style={styles.chartWrap}>
+    <View style={styles.chartWrap} {...panResponder.panHandlers}>
       <Svg width={chartWidth} height={chartHeight}>
+        <Defs>
+          <ClipPath id="plotClip">
+            <Rect
+              height={plotHeight}
+              width={plotWidth}
+              x={padding.left}
+              y={padding.top}
+            />
+          </ClipPath>
+        </Defs>
         {gridValues.map((value) => {
           const y = yForWeight(value);
           return (
-            <G key={value}>
+            <G key={value.toFixed(2)}>
               <Line
                 x1={padding.left}
                 x2={chartWidth - padding.right}
@@ -348,40 +464,42 @@ function WeightChart({ entries, windowDays }: { entries: WeightEntry[]; windowDa
           );
         })}
 
-        {sorted.length > 1 && (
-          <Polyline
-            fill="none"
-            points={actualPoints}
-            stroke="#A7B2C3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-          />
-        )}
-        {averages.length > 1 && (
-          <Polyline
-            fill="none"
-            points={averagePoints}
-            stroke={colors.blue}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={3.5}
-          />
-        )}
-        {sorted.map((item) => (
-          <Circle
-            cx={xForDate(item.date)}
-            cy={yForWeight(item.weightKg)}
-            fill={colors.surface}
-            key={item.id}
-            r={4.5}
-            stroke={colors.ink}
-            strokeWidth={1.8}
-          />
-        ))}
+        <G clipPath="url(#plotClip)">
+          {sorted.length > 1 && (
+            <Polyline
+              fill="none"
+              points={actualPoints}
+              stroke="#A7B2C3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+            />
+          )}
+          {averages.length > 1 && (
+            <Polyline
+              fill="none"
+              points={averagePoints}
+              stroke={colors.blue}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={3.5}
+            />
+          )}
+          {sorted.map((item) => (
+            <Circle
+              cx={xForDate(item.date)}
+              cy={yForWeight(item.weightKg)}
+              fill={colors.surface}
+              key={item.id}
+              r={4.5}
+              stroke={colors.ink}
+              strokeWidth={1.8}
+            />
+          ))}
+        </G>
 
         <SvgText fill={colors.muted} fontSize="11" textAnchor="start" x={padding.left} y={chartHeight - 8}>
-          {formatDate(sorted[0].date).slice(5)}
+          {startLabel}
         </SvgText>
         <SvgText
           fill={colors.muted}
@@ -390,7 +508,7 @@ function WeightChart({ entries, windowDays }: { entries: WeightEntry[]; windowDa
           x={chartWidth - padding.right}
           y={chartHeight - 8}
         >
-          {formatDate(sorted[sorted.length - 1].date).slice(5)}
+          {endLabel}
         </SvgText>
       </Svg>
       <View style={styles.legendRow}>
@@ -452,10 +570,6 @@ export default function App() {
 
   const focusNext = (ref: { current: TextInput | null }) => {
     requestAnimationFrame(() => ref.current?.focus());
-  };
-
-  const scrollMainFormIntoView = () => {
-    setTimeout(() => mainScrollRef.current?.scrollToEnd({ animated: true }), 260);
   };
 
   useEffect(() => {
@@ -753,27 +867,28 @@ export default function App() {
                 onSubmitEditing={() => focusNext(onboardingStartWeightRef)}
                 placeholder="175"
                 ref={onboardingHeightRef}
+                scrollViewRef={onboardingScrollRef}
                 value={heightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="시작 몸무게(kg)"
                 onChangeText={setStartWeightInput}
-                onFocus={() => setTimeout(() => onboardingScrollRef.current?.scrollToEnd({ animated: true }), 220)}
                 onSubmitEditing={() => focusNext(onboardingTargetWeightRef)}
                 placeholder="82.4"
                 ref={onboardingStartWeightRef}
+                scrollViewRef={onboardingScrollRef}
                 value={startWeightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="목표 몸무게(선택)"
                 onChangeText={setTargetWeightInput}
-                onFocus={() => setTimeout(() => onboardingScrollRef.current?.scrollToEnd({ animated: true }), 220)}
                 onSubmitEditing={saveInitialProfile}
                 placeholder="75"
                 ref={onboardingTargetWeightRef}
                 returnKeyType="done"
+                scrollViewRef={onboardingScrollRef}
                 value={targetWeightInput}
               />
               <AppButton icon={Check} label="시작하기" onPress={saveInitialProfile} />
@@ -879,31 +994,31 @@ export default function App() {
                 <Field
                   label="날짜"
                   onChangeText={setWeightDate}
-                  onFocus={scrollMainFormIntoView}
                   onSubmitEditing={() => focusNext(weightValueRef)}
                   placeholder="2026-07-07"
                   ref={weightDateRef}
+                  scrollViewRef={mainScrollRef}
                   value={weightDate}
                 />
                 <Field
                   keyboardType="decimal-pad"
                   label="몸무게(kg)"
                   onChangeText={setWeightInput}
-                  onFocus={scrollMainFormIntoView}
                   onSubmitEditing={() => focusNext(weightMemoRef)}
                   placeholder="80.2"
                   ref={weightValueRef}
+                  scrollViewRef={mainScrollRef}
                   value={weightInput}
                 />
                 <Field
                   label="메모(선택)"
                   multiline
                   onChangeText={setWeightMemo}
-                  onFocus={scrollMainFormIntoView}
                   onSubmitEditing={saveWeight}
                   placeholder="회식, 야식, 운동 등"
                   ref={weightMemoRef}
                   returnKeyType="done"
+                  scrollViewRef={mainScrollRef}
                   value={weightMemo}
                 />
                 <AppButton icon={Check} label="체중 저장" onPress={saveWeight} />
@@ -969,10 +1084,10 @@ export default function App() {
                 <Field
                   label="날짜"
                   onChangeText={setInbodyDate}
-                  onFocus={scrollMainFormIntoView}
                   onSubmitEditing={() => focusNext(inbodyWeightRef)}
                   placeholder="2026-07-07"
                   ref={inbodyDateRef}
+                  scrollViewRef={mainScrollRef}
                   value={inbodyDate}
                 />
                 <View style={styles.twoColumns}>
@@ -980,20 +1095,20 @@ export default function App() {
                     keyboardType="decimal-pad"
                     label="체중"
                     onChangeText={setInbodyWeight}
-                    onFocus={scrollMainFormIntoView}
                     onSubmitEditing={() => focusNext(skeletalMuscleRef)}
                     placeholder="80.2"
                     ref={inbodyWeightRef}
+                    scrollViewRef={mainScrollRef}
                     value={inbodyWeight}
                   />
                   <Field
                     keyboardType="decimal-pad"
                     label="골격근"
                     onChangeText={setSkeletalMuscle}
-                    onFocus={scrollMainFormIntoView}
                     onSubmitEditing={() => focusNext(bodyFatPercentRef)}
                     placeholder="34.0"
                     ref={skeletalMuscleRef}
+                    scrollViewRef={mainScrollRef}
                     value={skeletalMuscle}
                   />
                 </View>
@@ -1002,20 +1117,20 @@ export default function App() {
                     keyboardType="decimal-pad"
                     label="체지방률"
                     onChangeText={setBodyFatPercent}
-                    onFocus={scrollMainFormIntoView}
                     onSubmitEditing={() => focusNext(bodyFatMassRef)}
                     placeholder="22.5"
                     ref={bodyFatPercentRef}
+                    scrollViewRef={mainScrollRef}
                     value={bodyFatPercent}
                   />
                   <Field
                     keyboardType="decimal-pad"
                     label="체지방량"
                     onChangeText={setBodyFatMass}
-                    onFocus={scrollMainFormIntoView}
                     onSubmitEditing={() => focusNext(visceralFatRef)}
                     placeholder="18.1"
                     ref={bodyFatMassRef}
+                    scrollViewRef={mainScrollRef}
                     value={bodyFatMass}
                   />
                 </View>
@@ -1023,21 +1138,21 @@ export default function App() {
                   keyboardType="decimal-pad"
                   label="내장지방 레벨"
                   onChangeText={setVisceralFat}
-                  onFocus={scrollMainFormIntoView}
                   onSubmitEditing={() => focusNext(inbodyMemoRef)}
                   placeholder="8"
                   ref={visceralFatRef}
+                  scrollViewRef={mainScrollRef}
                   value={visceralFat}
                 />
                 <Field
                   label="메모(선택)"
                   multiline
                   onChangeText={setInbodyMemo}
-                  onFocus={scrollMainFormIntoView}
                   onSubmitEditing={saveInbody}
                   placeholder="검사 컨디션 등"
                   ref={inbodyMemoRef}
                   returnKeyType="done"
+                  scrollViewRef={mainScrollRef}
                   value={inbodyMemo}
                 />
                 <AppButton icon={Check} label="인바디 저장" onPress={saveInbody} />
@@ -1094,31 +1209,31 @@ export default function App() {
                 keyboardType="decimal-pad"
                 label="키(cm)"
                 onChangeText={setHeightInput}
-                onFocus={scrollMainFormIntoView}
                 onSubmitEditing={() => focusNext(profileStartWeightRef)}
                 placeholder="175"
                 ref={profileHeightRef}
+                scrollViewRef={mainScrollRef}
                 value={heightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="시작 몸무게(kg)"
                 onChangeText={setStartWeightInput}
-                onFocus={scrollMainFormIntoView}
                 onSubmitEditing={() => focusNext(profileTargetWeightRef)}
                 placeholder="82.4"
                 ref={profileStartWeightRef}
+                scrollViewRef={mainScrollRef}
                 value={startWeightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="목표 몸무게(선택)"
                 onChangeText={setTargetWeightInput}
-                onFocus={scrollMainFormIntoView}
                 onSubmitEditing={saveProfile}
                 placeholder="75"
                 ref={profileTargetWeightRef}
                 returnKeyType="done"
+                scrollViewRef={mainScrollRef}
                 value={targetWeightInput}
               />
               <AppButton icon={Check} label="프로필 저장" onPress={saveProfile} />
