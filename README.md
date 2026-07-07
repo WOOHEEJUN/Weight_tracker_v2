@@ -21,10 +21,15 @@ npm run android
 
 ## APK 빌드
 
+`main` 브랜치에 푸시하면 GitHub Actions가 APK를 만들고 GitHub Pages에 설치 페이지를 배포합니다.
+
+- 설치 페이지: https://wooheejun.github.io/Weight_tracker_v2/
+- 직접 APK: https://wooheejun.github.io/Weight_tracker_v2/weight-tracker-v2.apk
+
 Expo 계정으로 EAS Build를 사용할 수 있으면 아래 명령으로 APK를 만들 수 있습니다.
 
 ```bash
-npx eas build --platform android --profile apk
+npm run build:apk
 ```
 
 로컬 Android SDK가 준비되어 있으면 `npx expo prebuild --platform android` 후 Gradle 빌드로도 APK를 만들 수 있습니다.

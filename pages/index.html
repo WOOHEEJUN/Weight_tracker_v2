@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>몸무게 기록 APK</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7fb;
+        --surface: #ffffff;
+        --ink: #151922;
+        --muted: #667085;
+        --border: #dce1ea;
+        --blue: #2563eb;
+        --green: #159a74;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      main {
+        width: min(520px, 100%);
+        margin: 0 auto;
+        padding: 40px 20px;
+      }
+
+      .app {
+        display: grid;
+        gap: 22px;
+      }
+
+      .icon {
+        width: 84px;
+        height: 84px;
+        border-radius: 20px;
+        box-shadow: 0 14px 34px rgb(21 25 34 / 14%);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(32px, 8vw, 46px);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.6;
+      }
+
+      .download {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 54px;
+        border-radius: 8px;
+        background: var(--blue);
+        color: #fff;
+        font-size: 17px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .panel {
+        display: grid;
+        gap: 12px;
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .panel h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      ol {
+        margin: 0;
+        padding-left: 22px;
+        color: var(--muted);
+        line-height: 1.8;
+      }
+
+      code {
+        color: var(--green);
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="app">
+        <img class="icon" src="./assets/icon.png" alt="몸무게 기록 아이콘" />
+        <h1>몸무게 기록</h1>
+        <p>Android에 직접 설치할 수 있는 최신 APK입니다.</p>
+        <a class="download" href="./weight-tracker-v2.apk" download>APK 다운로드</a>
+
+        <div class="panel">
+          <h2>설치</h2>
+          <ol>
+            <li>Android에서 이 페이지를 열고 APK를 다운로드합니다.</li>
+            <li>브라우저의 <code>알 수 없는 앱 설치</code>를 허용합니다.</li>
+            <li>다운로드한 APK를 열어 설치합니다.</li>
+          </ol>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
