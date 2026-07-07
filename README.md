@@ -2,6 +2,8 @@
 
 개인용 Android 체중 기록 앱입니다. 기록은 단순하게 남기고, 실제 체중 점과 이동평균선으로 추세를 확인하는 데 집중합니다.
 
+Android 패키지명은 `com.wooheejun.weighttrackerv2`입니다.
+
 ## 주요 기능
 
 - 첫 실행 시 키, 시작 몸무게, 선택 목표 몸무게 저장
@@ -25,6 +27,8 @@ npm run android
 
 - 설치 페이지: https://wooheejun.github.io/Weight_tracker_v2/
 - 직접 APK: https://github.com/WOOHEEJUN/Weight_tracker_v2/releases/download/latest-apk/weight-tracker-v2.apk
+
+예전 테스트 APK와 겹치지 않도록 Android 패키지명을 `com.wooheejun.weighttrackerv2`로 분리했습니다. 이전에 설치한 같은 이름의 테스트 앱은 필요하면 직접 삭제하면 됩니다.
 
 Expo 계정으로 EAS Build를 사용할 수 있으면 아래 명령으로 APK를 만들 수 있습니다.
 

@@ -38,16 +38,20 @@ jobs:
       - name: Expo Android 프로젝트 생성
         run: npx expo prebuild --platform android --no-install
 
+      - name: 고정 debug 서명키 적용
+        run: |
+          cp signing/debug.keystore android/app/debug.keystore
+
       - name: APK 빌드
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
       - name: APK 파일 준비
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/weight-tracker-v2.apk
+          cp android/app/build/outputs/apk/release/app-release.apk dist/weight-tracker-v2.apk
           sha256sum dist/weight-tracker-v2.apk > dist/weight-tracker-v2.apk.sha256
 
       - name: 최신 APK 릴리스 갱신

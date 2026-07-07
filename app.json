@@ -2,7 +2,7 @@
   "expo": {
     "name": "몸무게 기록",
     "slug": "weight-tracker-v2",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,8 +10,8 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.wooheejun.weighttracker",
-      "versionCode": 1,
+      "package": "com.wooheejun.weighttrackerv2",
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
