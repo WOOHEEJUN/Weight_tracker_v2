@@ -21,10 +21,10 @@ npm run android
 
 ## APK 빌드
 
-`main` 브랜치에 푸시하면 GitHub Actions가 APK를 만들고 GitHub Pages에 설치 페이지를 배포합니다.
+`main` 브랜치에 푸시하면 GitHub Actions가 APK를 만들고 `latest-apk` 릴리스에 올립니다. GitHub Pages는 설치 페이지로 사용합니다.
 
 - 설치 페이지: https://wooheejun.github.io/Weight_tracker_v2/
-- 직접 APK: https://wooheejun.github.io/Weight_tracker_v2/weight-tracker-v2.apk
+- 직접 APK: https://github.com/WOOHEEJUN/Weight_tracker_v2/releases/download/latest-apk/weight-tracker-v2.apk
 
 Expo 계정으로 EAS Build를 사용할 수 있으면 아래 명령으로 APK를 만들 수 있습니다.
 
