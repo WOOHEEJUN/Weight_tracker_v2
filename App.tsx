@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import {
   ActivityIndicator,
   Alert,
@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  StatusBar as NativeStatusBar,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -26,7 +27,7 @@ import {
   UserRound,
 } from 'lucide-react-native';
 import Svg, { Circle, G, Line, Polyline, Text as SvgText } from 'react-native-svg';
-import { type ComponentType, useEffect, useMemo, useState } from 'react';
+import { type ComponentType, forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 
 const STORAGE_KEYS = {
   profile: 'weight-tracker/profile',
@@ -35,6 +36,8 @@ const STORAGE_KEYS = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ANDROID_TOP_INSET = Platform.OS === 'android' ? (NativeStatusBar.currentHeight ?? 0) + 14 : 0;
+const KEYBOARD_EXTRA_SPACE = 180;
 
 type Profile = {
   heightCm: number;
@@ -200,36 +203,52 @@ function AppButton({
   );
 }
 
-function Field({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-  keyboardType = 'default',
-  multiline = false,
-}: {
+type FieldProps = {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
   placeholder?: string;
   keyboardType?: 'default' | 'decimal-pad' | 'number-pad';
   multiline?: boolean;
-}) {
+  autoFocus?: boolean;
+  returnKeyType?: 'next' | 'done';
+  onFocus?: () => void;
+  onSubmitEditing?: () => void;
+};
+
+const Field = forwardRef<TextInput, FieldProps>(function Field({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType = 'default',
+  multiline = false,
+  autoFocus = false,
+  returnKeyType = 'next',
+  onFocus,
+  onSubmitEditing,
+}, ref) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        autoFocus={autoFocus}
+        blurOnSubmit
         keyboardType={keyboardType}
         multiline={multiline}
         onChangeText={onChangeText}
+        onFocus={onFocus}
+        onSubmitEditing={onSubmitEditing}
         placeholder={placeholder}
         placeholderTextColor="#98A2B3"
+        ref={ref}
+        returnKeyType={multiline ? 'done' : returnKeyType}
         style={[styles.input, multiline && styles.memoInput]}
         value={value}
       />
     </View>
   );
-}
+});
 
 function StatCard({
   label,
@@ -411,6 +430,33 @@ export default function App() {
   const [bodyFatMass, setBodyFatMass] = useState('');
   const [visceralFat, setVisceralFat] = useState('');
   const [inbodyMemo, setInbodyMemo] = useState('');
+
+  const onboardingScrollRef = useRef<ScrollView>(null);
+  const mainScrollRef = useRef<ScrollView>(null);
+  const onboardingHeightRef = useRef<TextInput>(null);
+  const onboardingStartWeightRef = useRef<TextInput>(null);
+  const onboardingTargetWeightRef = useRef<TextInput>(null);
+  const weightDateRef = useRef<TextInput>(null);
+  const weightValueRef = useRef<TextInput>(null);
+  const weightMemoRef = useRef<TextInput>(null);
+  const inbodyDateRef = useRef<TextInput>(null);
+  const inbodyWeightRef = useRef<TextInput>(null);
+  const skeletalMuscleRef = useRef<TextInput>(null);
+  const bodyFatPercentRef = useRef<TextInput>(null);
+  const bodyFatMassRef = useRef<TextInput>(null);
+  const visceralFatRef = useRef<TextInput>(null);
+  const inbodyMemoRef = useRef<TextInput>(null);
+  const profileHeightRef = useRef<TextInput>(null);
+  const profileStartWeightRef = useRef<TextInput>(null);
+  const profileTargetWeightRef = useRef<TextInput>(null);
+
+  const focusNext = (ref: { current: TextInput | null }) => {
+    requestAnimationFrame(() => ref.current?.focus());
+  };
+
+  const scrollMainFormIntoView = () => {
+    setTimeout(() => mainScrollRef.current?.scrollToEnd({ animated: true }), 260);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -674,7 +720,7 @@ export default function App() {
 
   if (!isReady) {
     return (
-      <SafeAreaView style={styles.loadingScreen}>
+      <SafeAreaView style={[styles.loadingScreen, styles.androidSafeArea]}>
         <ActivityIndicator color={colors.blue} size="large" />
       </SafeAreaView>
     );
@@ -682,10 +728,16 @@ export default function App() {
 
   if (!profile) {
     return (
-      <SafeAreaView style={styles.screen}>
-        <StatusBar style="dark" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-          <ScrollView contentContainerStyle={styles.onboardingContent} keyboardShouldPersistTaps="handled">
+      <SafeAreaView style={[styles.screen, styles.androidSafeArea]}>
+        <ExpoStatusBar style="dark" />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+          <ScrollView
+            contentContainerStyle={styles.onboardingContent}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
+            ref={onboardingScrollRef}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.appBadge}>
               <Scale color={colors.blue} size={26} strokeWidth={2.5} />
             </View>
@@ -694,24 +746,34 @@ export default function App() {
 
             <View style={styles.panel}>
               <Field
+                autoFocus
                 keyboardType="decimal-pad"
                 label="키(cm)"
                 onChangeText={setHeightInput}
+                onSubmitEditing={() => focusNext(onboardingStartWeightRef)}
                 placeholder="175"
+                ref={onboardingHeightRef}
                 value={heightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="시작 몸무게(kg)"
                 onChangeText={setStartWeightInput}
+                onFocus={() => setTimeout(() => onboardingScrollRef.current?.scrollToEnd({ animated: true }), 220)}
+                onSubmitEditing={() => focusNext(onboardingTargetWeightRef)}
                 placeholder="82.4"
+                ref={onboardingStartWeightRef}
                 value={startWeightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="목표 몸무게(선택)"
                 onChangeText={setTargetWeightInput}
+                onFocus={() => setTimeout(() => onboardingScrollRef.current?.scrollToEnd({ animated: true }), 220)}
+                onSubmitEditing={saveInitialProfile}
                 placeholder="75"
+                ref={onboardingTargetWeightRef}
+                returnKeyType="done"
                 value={targetWeightInput}
               />
               <AppButton icon={Check} label="시작하기" onPress={saveInitialProfile} />
@@ -723,9 +785,9 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+    <SafeAreaView style={[styles.screen, styles.androidSafeArea]}>
+      <ExpoStatusBar style="dark" />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <View style={styles.header}>
           <View>
             <Text style={styles.kicker}>{todayISO()}</Text>
@@ -754,7 +816,13 @@ export default function App() {
           />
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          ref={mainScrollRef}
+          showsVerticalScrollIndicator={false}
+        >
           {tab === 'weight' && (
             <>
               <View style={styles.statsGrid}>
@@ -808,19 +876,34 @@ export default function App() {
                   <Plus color={colors.green} size={20} />
                   <Text style={styles.sectionTitle}>체중 입력</Text>
                 </View>
-                <Field label="날짜" onChangeText={setWeightDate} placeholder="2026-07-07" value={weightDate} />
+                <Field
+                  label="날짜"
+                  onChangeText={setWeightDate}
+                  onFocus={scrollMainFormIntoView}
+                  onSubmitEditing={() => focusNext(weightValueRef)}
+                  placeholder="2026-07-07"
+                  ref={weightDateRef}
+                  value={weightDate}
+                />
                 <Field
                   keyboardType="decimal-pad"
                   label="몸무게(kg)"
                   onChangeText={setWeightInput}
+                  onFocus={scrollMainFormIntoView}
+                  onSubmitEditing={() => focusNext(weightMemoRef)}
                   placeholder="80.2"
+                  ref={weightValueRef}
                   value={weightInput}
                 />
                 <Field
                   label="메모(선택)"
                   multiline
                   onChangeText={setWeightMemo}
+                  onFocus={scrollMainFormIntoView}
+                  onSubmitEditing={saveWeight}
                   placeholder="회식, 야식, 운동 등"
+                  ref={weightMemoRef}
+                  returnKeyType="done"
                   value={weightMemo}
                 />
                 <AppButton icon={Check} label="체중 저장" onPress={saveWeight} />
@@ -883,20 +966,34 @@ export default function App() {
                   <Plus color={colors.green} size={20} />
                   <Text style={styles.sectionTitle}>인바디 입력</Text>
                 </View>
-                <Field label="날짜" onChangeText={setInbodyDate} placeholder="2026-07-07" value={inbodyDate} />
+                <Field
+                  label="날짜"
+                  onChangeText={setInbodyDate}
+                  onFocus={scrollMainFormIntoView}
+                  onSubmitEditing={() => focusNext(inbodyWeightRef)}
+                  placeholder="2026-07-07"
+                  ref={inbodyDateRef}
+                  value={inbodyDate}
+                />
                 <View style={styles.twoColumns}>
                   <Field
                     keyboardType="decimal-pad"
                     label="체중"
                     onChangeText={setInbodyWeight}
+                    onFocus={scrollMainFormIntoView}
+                    onSubmitEditing={() => focusNext(skeletalMuscleRef)}
                     placeholder="80.2"
+                    ref={inbodyWeightRef}
                     value={inbodyWeight}
                   />
                   <Field
                     keyboardType="decimal-pad"
                     label="골격근"
                     onChangeText={setSkeletalMuscle}
+                    onFocus={scrollMainFormIntoView}
+                    onSubmitEditing={() => focusNext(bodyFatPercentRef)}
                     placeholder="34.0"
+                    ref={skeletalMuscleRef}
                     value={skeletalMuscle}
                   />
                 </View>
@@ -905,14 +1002,20 @@ export default function App() {
                     keyboardType="decimal-pad"
                     label="체지방률"
                     onChangeText={setBodyFatPercent}
+                    onFocus={scrollMainFormIntoView}
+                    onSubmitEditing={() => focusNext(bodyFatMassRef)}
                     placeholder="22.5"
+                    ref={bodyFatPercentRef}
                     value={bodyFatPercent}
                   />
                   <Field
                     keyboardType="decimal-pad"
                     label="체지방량"
                     onChangeText={setBodyFatMass}
+                    onFocus={scrollMainFormIntoView}
+                    onSubmitEditing={() => focusNext(visceralFatRef)}
                     placeholder="18.1"
+                    ref={bodyFatMassRef}
                     value={bodyFatMass}
                   />
                 </View>
@@ -920,14 +1023,21 @@ export default function App() {
                   keyboardType="decimal-pad"
                   label="내장지방 레벨"
                   onChangeText={setVisceralFat}
+                  onFocus={scrollMainFormIntoView}
+                  onSubmitEditing={() => focusNext(inbodyMemoRef)}
                   placeholder="8"
+                  ref={visceralFatRef}
                   value={visceralFat}
                 />
                 <Field
                   label="메모(선택)"
                   multiline
                   onChangeText={setInbodyMemo}
+                  onFocus={scrollMainFormIntoView}
+                  onSubmitEditing={saveInbody}
                   placeholder="검사 컨디션 등"
+                  ref={inbodyMemoRef}
+                  returnKeyType="done"
                   value={inbodyMemo}
                 />
                 <AppButton icon={Check} label="인바디 저장" onPress={saveInbody} />
@@ -984,21 +1094,31 @@ export default function App() {
                 keyboardType="decimal-pad"
                 label="키(cm)"
                 onChangeText={setHeightInput}
+                onFocus={scrollMainFormIntoView}
+                onSubmitEditing={() => focusNext(profileStartWeightRef)}
                 placeholder="175"
+                ref={profileHeightRef}
                 value={heightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="시작 몸무게(kg)"
                 onChangeText={setStartWeightInput}
+                onFocus={scrollMainFormIntoView}
+                onSubmitEditing={() => focusNext(profileTargetWeightRef)}
                 placeholder="82.4"
+                ref={profileStartWeightRef}
                 value={startWeightInput}
               />
               <Field
                 keyboardType="decimal-pad"
                 label="목표 몸무게(선택)"
                 onChangeText={setTargetWeightInput}
+                onFocus={scrollMainFormIntoView}
+                onSubmitEditing={saveProfile}
                 placeholder="75"
+                ref={profileTargetWeightRef}
+                returnKeyType="done"
                 value={targetWeightInput}
               />
               <AppButton icon={Check} label="프로필 저장" onPress={saveProfile} />
@@ -1077,9 +1197,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   content: {
-    gap: 14,
+    gap: 16,
     padding: 16,
-    paddingBottom: 36,
+    paddingBottom: KEYBOARD_EXTRA_SPACE,
   },
   emptyChart: {
     alignItems: 'center',
@@ -1104,7 +1224,7 @@ const styles = StyleSheet.create({
   },
   field: {
     flex: 1,
-    gap: 7,
+    gap: 8,
   },
   flex: {
     flex: 1,
@@ -1131,9 +1251,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingBottom: 12,
-    paddingHorizontal: 18,
-    paddingTop: Platform.OS === 'android' ? 22 : 8,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
   headerBadge: {
     backgroundColor: colors.greenSoft,
@@ -1205,14 +1325,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     color: colors.ink,
-    fontSize: 16,
-    minHeight: 46,
-    paddingHorizontal: 12,
+    fontSize: 17,
+    minHeight: 54,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   kicker: {
     color: colors.muted,
     fontSize: 13,
     fontWeight: '700',
+    marginBottom: 2,
   },
   label: {
     color: colors.ink,
@@ -1258,22 +1380,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   memoInput: {
-    minHeight: 78,
-    paddingTop: 12,
+    minHeight: 92,
+    paddingTop: 14,
     textAlignVertical: 'top',
   },
   onboardingContent: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 22,
+    paddingBottom: KEYBOARD_EXTRA_SPACE,
+    paddingTop: 34,
   },
   panel: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    gap: 14,
-    padding: 16,
+    gap: 16,
+    padding: 18,
   },
   pressed: {
     opacity: 0.72,
@@ -1292,6 +1416,9 @@ const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.bg,
     flex: 1,
+  },
+  androidSafeArea: {
+    paddingTop: ANDROID_TOP_INSET,
   },
   sectionHeader: {
     alignItems: 'center',
@@ -1368,6 +1495,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flexDirection: 'row',
     gap: 4,
+    marginBottom: 2,
     marginHorizontal: 16,
     padding: 4,
   },
